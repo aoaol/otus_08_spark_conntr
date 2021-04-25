@@ -2,19 +2,48 @@ package org.example
 
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import com.dimafeng.testcontainers.PostgreSQLContainer
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.sql.{ SaveMode, SparkSession }
 import org.scalatest.flatspec.AnyFlatSpec
-
 import java.sql.DriverManager
 import java.util.Properties
 
-class PostgresqlSpec extends AnyFlatSpec with TestContainerForAll {
+import org.scalatest.matchers.should.Matchers
+
+class PostgresqlSpec extends AnyFlatSpec with TestContainerForAll with Matchers {
 
   override val containerDef = PostgreSQLContainer.Def()
 
   val testTableName = "users"
+  val recordsCount = 11
 
-/*
+
+  "PostgreSQL data source" should "read table" in withContainers { postgresServer =>
+    val spark = SparkSession
+      .builder()
+      .master("local[*]")
+      .appName("PostgresReaderJob")
+      .getOrCreate()
+
+    println("#################  read  ##################")
+    val df = spark
+      .read
+      .format("org.example.datasource.postgres")
+      .option("url", postgresServer.jdbcUrl)
+      .option("user", postgresServer.username)
+      .option("password", postgresServer.password)
+      .option("tableName", testTableName)
+      .option("partCount", "2")
+      .option("orderByField", "user_id")
+      .load()
+
+    df.show( recordsCount )
+    df.count shouldBe recordsCount
+
+    spark.stop()
+  }
+
+
+
   "PostgreSQL data source" should "write table" in withContainers { postgresServer =>
     println("--------------------------------------------------------------------0=-0=-0=-0=-0=-0=-0=0=-0")
 
@@ -26,7 +55,7 @@ class PostgresqlSpec extends AnyFlatSpec with TestContainerForAll {
 
     import spark.implicits._
 
-    val df = (60 to 76).map(_.toLong).toDF("user_id")
+    val df = (recordsCount + 1 to recordsCount + 26).map(_.toLong).toDF("user_id")
 
     df
       .write
@@ -35,33 +64,8 @@ class PostgresqlSpec extends AnyFlatSpec with TestContainerForAll {
       .option("user", postgresServer.username)
       .option("password", postgresServer.password)
       .option("tableName", testTableName)
-      .mode(SaveMode.Append)
+      .mode( SaveMode.Append )
       .save()
-
-    spark.stop()
-  }
-*/
-
-
-  "PostgreSQL data source" should "read table" in withContainers { postgresServer =>
-    val spark = SparkSession
-      .builder()
-      .master("local[*]")
-      .appName("PostgresReaderJob")
-      .getOrCreate()
-
-    println("#################  read  ##################")
-    spark
-      .read
-      .format("org.example.datasource.postgres")
-      .option("url", postgresServer.jdbcUrl)
-      .option("user", postgresServer.username)
-      .option("password", postgresServer.password)
-      .option("tableName", testTableName)
-      .option("partCount", "5")
-      .option("orderByField", "user_id")
-      .load()
-      .show(  200 )
 
     spark.stop()
   }
@@ -93,7 +97,7 @@ class PostgresqlSpec extends AnyFlatSpec with TestContainerForAll {
   object Queries {
     lazy val createTableQuery = s"CREATE TABLE $testTableName (user_id BIGINT PRIMARY KEY);"
 
-    lazy val testValues: String = (1 to 76).map(i => s"($i)").mkString(", ")
+    lazy val testValues: String = (1 to recordsCount).map(i => s"($i)").mkString(", ")
 
     lazy val insertDataQuery = s"INSERT INTO $testTableName VALUES $testValues;"
   }

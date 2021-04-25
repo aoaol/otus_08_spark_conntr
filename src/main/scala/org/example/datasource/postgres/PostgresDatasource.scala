@@ -59,16 +59,22 @@ class PostgresScan( options: PgReadOptions) extends Scan with Batch {
   override def planInputPartitions(): Array[InputPartition] = {
 
     val connection = DriverManager.getConnection( options.url, options.user, options.password )
-    val statement = connection.createStatement()
-    val resultSet = statement.executeQuery(s"select count(*) cnt from ${options.tableName}")
+    val statement = connection.prepareStatement(s"select count(*) cnt from ${options.tableName}")
+    val resultSet = statement.executeQuery()
     resultSet.next()
     val cnt = resultSet.getInt("cnt")
     connection.close()
 
     val partCount = options.partCount
-    val step = (cnt / partCount) + (if (cnt % partCount == 0) 0 else 1)
+    val delta = if (cnt % partCount == 0) 0 else 1
+    val step = (cnt / partCount) + delta
 
-    (for (offs <- 0 to cnt by step) yield new PostgresPartition( offs, step )).toArray
+    val ret = (for (offs <- 0 to cnt - 1 + delta   by step) yield new PostgresPartition( offs, step )).toArray
+
+    for (e <- ret)
+      println(s"^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ #&*&*&*&*&*&*&*&**&*&*&*&*&*&*&*&*&*&   InputPartition:  ${e.asInstanceOf[ PostgresPartition ].offset}, ${e.asInstanceOf[ PostgresPartition ].limit}")
+
+    ret.asInstanceOf[ Array[InputPartition] ]
   }
 
   override def createReaderFactory(): PartitionReaderFactory = new PostgresPartitionReaderFactory( options )
